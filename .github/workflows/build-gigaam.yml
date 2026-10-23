@@ -32,7 +32,7 @@ jobs:
 
       - name: Cache vendor
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: vendor
           key: vendor-${{ env.WHISPER_TAG }}-${{ env.SPARKLE_VERSION }}-${{ env.SHERPA_VERSION }}-v1
@@ -71,11 +71,28 @@ jobs:
           echo "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6  sherpa-onnx/silero_vad.onnx" | shasum -a 256 -c
           ls -la sherpa-onnx/lib
 
+      - name: Save vendor cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: vendor
+          key: vendor-${{ env.WHISPER_TAG }}-${{ env.SPARKLE_VERSION }}-${{ env.SHERPA_VERSION }}-v1
+
       - name: Build Keyboop.app
         env:
           KEYBOOP_SIGN_ID: "-"   # ad-hoc: сертификата «Keyboop Dev» на сборщике нет
         run: |
-          bash build-app.sh
+          set +e
+          bash build-app.sh > build.log 2>&1
+          rc=$?
+          set -e
+          cat build.log
+          if [ $rc -ne 0 ]; then
+            grep -E "error:|✗|ld: |Undefined symbols|duplicate symbol" build.log | head -45 | while IFS= read -r l; do
+              echo "::error::${l//%/%25}"
+            done
+            exit $rc
+          fi
           ls -la Keyboop.app/Contents/MacOS Keyboop.app/Contents/Resources
           otool -L Keyboop.app/Contents/MacOS/Keyboop
           nm -gU Keyboop.app/Contents/MacOS/Keyboop >/dev/null
@@ -94,6 +111,17 @@ jobs:
           "${n}/bin/sherpa-onnx-offline" --encoder=$d/encoder.int8.onnx --decoder=$d/decoder.onnx \
             --joiner=$d/joiner.onnx --tokens=$d/tokens.txt --model-type=nemo_transducer \
             $d/test_wavs/example.wav
+
+      - name: Publish build log (on failure)
+        if: failure()
+        run: |
+          [ -f build.log ] || exit 0
+          git config user.name ci; git config user.email ci@localhost
+          git checkout --orphan ci-log
+          git rm -rfq --cached . >/dev/null
+          git add -f build.log
+          git commit -qm "build log ${GITHUB_SHA::7}"
+          git push -f origin ci-log
 
       - name: Package
         run: |
