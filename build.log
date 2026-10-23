@@ -1,0 +1,233 @@
+▸ swiftc compile…
+  sherpa-onnx: найден — GigaAM включён
+  (нет vendor/fluidaudio-prebuilt — сборка без Parakeet)
+Sources/Keyboop/VoiceHistory.swift:311:9: warning: 'SecKeychainGetUserInteractionAllowed' was deprecated in macOS 10.10: SecKeychain is deprecated [#DeprecatedDeclaration]
+309 |     private static func keychainRead() -> Data? {
+310 |         var wasAllowed: DarwinBoolean = true
+311 |         SecKeychainGetUserInteractionAllowed(&wasAllowed)
+    |         `- warning: 'SecKeychainGetUserInteractionAllowed' was deprecated in macOS 10.10: SecKeychain is deprecated [#DeprecatedDeclaration]
+312 |         SecKeychainSetUserInteractionAllowed(false)
+313 |         defer { SecKeychainSetUserInteractionAllowed(wasAllowed.boolValue) }
+
+Sources/Keyboop/VoiceHistory.swift:312:9: warning: 'SecKeychainSetUserInteractionAllowed' was deprecated in macOS 10.10: SecKeychain is deprecated [#DeprecatedDeclaration]
+310 |         var wasAllowed: DarwinBoolean = true
+311 |         SecKeychainGetUserInteractionAllowed(&wasAllowed)
+312 |         SecKeychainSetUserInteractionAllowed(false)
+    |         `- warning: 'SecKeychainSetUserInteractionAllowed' was deprecated in macOS 10.10: SecKeychain is deprecated [#DeprecatedDeclaration]
+313 |         defer { SecKeychainSetUserInteractionAllowed(wasAllowed.boolValue) }
+314 |         var q = keychainBase
+
+Sources/Keyboop/VoiceHistory.swift:313:17: warning: 'SecKeychainSetUserInteractionAllowed' was deprecated in macOS 10.10: SecKeychain is deprecated [#DeprecatedDeclaration]
+311 |         SecKeychainGetUserInteractionAllowed(&wasAllowed)
+312 |         SecKeychainSetUserInteractionAllowed(false)
+313 |         defer { SecKeychainSetUserInteractionAllowed(wasAllowed.boolValue) }
+    |                 `- warning: 'SecKeychainSetUserInteractionAllowed' was deprecated in macOS 10.10: SecKeychain is deprecated [#DeprecatedDeclaration]
+314 |         var q = keychainBase
+315 |         q[kSecReturnData as String] = true
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+Sources/Keyboop/VoiceController.swift:261:56: warning: capture of 'self' with non-Sendable type 'VoiceController?' in a '@Sendable' closure [#SendableClosureCaptures]
+   4 | /// Оркестратор голосового ввода (диктовка): hold-хоткей → запись → whisper.cpp →
+   5 | /// вставка БЕЗ буфера (принцип №1). Всё локально, без сети (принцип №2).
+   6 | final class VoiceController {
+     |             `- note: class 'VoiceController' does not conform to the 'Sendable' protocol
+   7 |     static let shared = VoiceController()
+   8 |     private let settings = AppSettings.shared
+     :
+ 259 |                 if !GigaAMEngine.shared.ready { Task { _ = await GigaAMEngine.shared.loadIfNeeded() } }
+ 260 |             } else if !willUseParakeet {
+ 261 |                 transcribeQueue.async { [weak self] in self?.loadModelIfNeeded() }
+     |                                                        `- warning: capture of 'self' with non-Sendable type 'VoiceController?' in a '@Sendable' closure [#SendableClosureCaptures]
+ 262 |             } else if !ParakeetEngine.shared.ready {
+ 263 |                 // Тот же приём для Parakeet (24.09.2026): холодная модель начинает грузиться на
+
+Sources/Keyboop/VoiceController.swift:391:43: warning: capture of 'self' with non-Sendable type 'VoiceController?' in a '@Sendable' closure [#SendableClosureCaptures]
+   4 | /// Оркестратор голосового ввода (диктовка): hold-хоткей → запись → whisper.cpp →
+   5 | /// вставка БЕЗ буфера (принцип №1). Всё локально, без сети (принцип №2).
+   6 | final class VoiceController {
+     |             `- note: class 'VoiceController' does not conform to the 'Sendable' protocol
+   7 |     static let shared = VoiceController()
+   8 |     private let settings = AppSettings.shared
+     :
+ 389 |                         text = await withCheckedContinuation { (c: CheckedContinuation<String, Never>) in
+ 390 |                             self.transcribeQueue.async { [weak self] in
+ 391 |                                 guard let self else { return c.resume(returning: "") }
+     |                                           `- warning: capture of 'self' with non-Sendable type 'VoiceController?' in a '@Sendable' closure [#SendableClosureCaptures]
+ 392 |                                 self.loadModelIfNeeded()
+ 393 |                                 c.resume(returning: self.whisper?.transcribe(samples: samples, language: lang) ?? "")
+
+Sources/Keyboop/VoiceController.swift:406:34: warning: reference to captured var 'text' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+ 404 |                 await MainActor.run {
+ 405 |                     guard self.endTranscription(gen) else { clip.map { VoiceClips.delete($0.id) }; return }
+ 406 |                     self.deliver(text, historyOnly: self.historyOnlyGens.remove(gen) != nil, audio: clip?.id, wave: clip?.wave)
+     |                                  `- warning: reference to captured var 'text' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+ 407 |                     self.refreshIndicator()
+ 408 |                     self.scheduleModelRelease()
+
+Sources/Keyboop/VoiceController.swift:438:43: warning: capture of 'self' with non-Sendable type 'VoiceController?' in a '@Sendable' closure [#SendableClosureCaptures]
+   4 | /// Оркестратор голосового ввода (диктовка): hold-хоткей → запись → whisper.cpp →
+   5 | /// вставка БЕЗ буфера (принцип №1). Всё локально, без сети (принцип №2).
+   6 | final class VoiceController {
+     |             `- note: class 'VoiceController' does not conform to the 'Sendable' protocol
+   7 |     static let shared = VoiceController()
+   8 |     private let settings = AppSettings.shared
+     :
+ 436 |                         text = await withCheckedContinuation { (c: CheckedContinuation<String, Never>) in
+ 437 |                             self.transcribeQueue.async { [weak self] in
+ 438 |                                 guard let self else { return c.resume(returning: "") }
+     |                                           `- warning: capture of 'self' with non-Sendable type 'VoiceController?' in a '@Sendable' closure [#SendableClosureCaptures]
+ 439 |                                 self.loadModelIfNeeded()
+ 440 |                                 let t = self.whisper?.transcribe(samples: samples, language: lang) ?? ""
+
+Sources/Keyboop/VoiceController.swift:464:34: warning: reference to captured var 'text' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+ 462 |                 await MainActor.run {
+ 463 |                     guard self.endTranscription(gen) else { clip.map { VoiceClips.delete($0.id) }; return }   // сторож уже бросил — поздний результат в топку
+ 464 |                     self.deliver(text, historyOnly: self.historyOnlyGens.remove(gen) != nil, audio: clip?.id, wave: clip?.wave)
+     |                                  `- warning: reference to captured var 'text' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+ 465 |                     self.refreshIndicator()
+ 466 |                     // Выгрузка после диктовки, если человек её включил. Без настройки это ещё и
+
+Sources/Keyboop/VoiceController.swift:713:21: warning: call to method 'playCue' in closure requires explicit use of 'self' to make capture semantics explicit; this is an error in the Swift 6 language mode
+ 711 |                 } else {
+ 712 |                     clip.map { VoiceClips.delete($0.id) }                // финал пустой — клип осиротел
+ 713 |                     playCue(failSound)
+     |                     `- warning: call to method 'playCue' in closure requires explicit use of 'self' to make capture semantics explicit; this is an error in the Swift 6 language mode
+ 714 |                 }
+ 715 |                 self.streamingActive = false; self.typedTail = ""
+
+Sources/Keyboop/VoiceController.swift:713:29: warning: reference to property 'failSound' in closure requires explicit use of 'self' to make capture semantics explicit; this is an error in the Swift 6 language mode
+ 711 |                 } else {
+ 712 |                     clip.map { VoiceClips.delete($0.id) }                // финал пустой — клип осиротел
+ 713 |                     playCue(failSound)
+     |                             `- warning: reference to property 'failSound' in closure requires explicit use of 'self' to make capture semantics explicit; this is an error in the Swift 6 language mode
+ 714 |                 }
+ 715 |                 self.streamingActive = false; self.typedTail = ""
+
+Sources/Keyboop/VoiceController.swift:1020:31: warning: reference to captured var 'self' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+1018 |                 try? await Task.sleep(nanoseconds: 100_000_000)
+1019 |                 await MainActor.run {
+1020 |                     guard let self, self.settings.voiceUnloadAfterDictation else { return }
+     |                               `- warning: reference to captured var 'self' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+1021 |                     self.releaseModelsNow()
+1022 |                 }
+
+Sources/Keyboop/VoiceController.swift:1032:31: warning: reference to captured var 'self' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+1030 |                 try? await Task.sleep(nanoseconds: 100_000_000)
+1031 |                 await MainActor.run {
+1032 |                     guard let self, self.settings.voiceUnloadAfterDictation else { return }
+     |                               `- warning: reference to captured var 'self' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+1033 |                     self.releaseModelsNow()
+1034 |                 }
+
+Sources/Keyboop/VoiceController.swift:1068:27: warning: capture of 'self' with non-Sendable type 'VoiceController?' in a '@Sendable' closure [#SendableClosureCaptures]
+   4 | /// Оркестратор голосового ввода (диктовка): hold-хоткей → запись → whisper.cpp →
+   5 | /// вставка БЕЗ буфера (принцип №1). Всё локально, без сети (принцип №2).
+   6 | final class VoiceController {
+     |             `- note: class 'VoiceController' does not conform to the 'Sendable' protocol
+   7 |     static let shared = VoiceController()
+   8 |     private let settings = AppSettings.shared
+     :
+1066 |         return await withCheckedContinuation { (c: CheckedContinuation<String?, Never>) in
+1067 |             transcribeQueue.async { [weak self] in
+1068 |                 guard let self else { return c.resume(returning: nil) }
+     |                           `- warning: capture of 'self' with non-Sendable type 'VoiceController?' in a '@Sendable' closure [#SendableClosureCaptures]
+1069 |                 self.loadModelIfNeeded()
+1070 |                 guard let w = self.whisper else { return c.resume(returning: nil) }
+
+[#SendableClosureCaptures]: <https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures>
+Sources/Keyboop/TextReplacer.swift:344:17: warning: variable 'u' was never mutated; consider changing to 'let' constant
+342 |             _ = CGEvent(keyboardEventSource: src, virtualKey: backspaceKey, keyDown: true)
+343 |             let e = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: true)
+344 |             var u = Array("прогрев".utf16)
+    |                 `- warning: variable 'u' was never mutated; consider changing to 'let' constant
+345 |             u.withUnsafeBufferPointer { e?.keyboardSetUnicodeString(stringLength: $0.count, unicodeString: $0.baseAddress) }
+346 |         }
+Sources/Keyboop/SettingsWindow.swift:2134:13: warning: variable 'views' was never mutated; consider changing to 'let' constant
+2132 |         let back = NSButton(title: L10n.t("amb.back"), target: self, action: #selector(backToExceptions))
+2133 |         back.bezelStyle = .rounded; back.controlSize = .regular
+2134 |         var views: [NSView] = [buttonRow([back]), group(2),
+     |             `- warning: variable 'views' was never mutated; consider changing to 'let' constant
+2135 |                                blockTitle("amb.title"), sub(L10n.t("amb.sub")), group(DS.itemGap)]
+2136 |         // Один центрированный столбец тумблеров, БЕЗ карточной подложки: у каждой строки один
+Sources/Keyboop/PlainPaste.swift:64:13: warning: initialization of immutable value 'before' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 62 |         PasteboardOwnership.beginOwnedWindow()
+ 63 |         defer { PasteboardOwnership.endOwnedWindow() }
+ 64 |         let before = pb.changeCount
+    |             `- warning: initialization of immutable value 'before' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 65 |         let snapshot: [[(type: NSPasteboard.PasteboardType, data: Data)]] = (pb.pasteboardItems ?? []).map { item in
+ 66 |             item.types.compactMap { t in item.data(forType: t).map { (type: t, data: $0) } }
+Sources/Keyboop/NotchIsland.swift:458:31: warning: immutable value 'nH' was never used; consider replacing with '_' or removing it [#no-usage]
+456 |     func silhouette() -> CGPath {
+457 |         let W = shape.bounds.width, totalH = shape.bounds.height
+458 |         let nW = notch.width, nH = notch.height
+    |                               `- warning: immutable value 'nH' was never used; consider replacing with '_' or removing it [#no-usage]
+459 |         let w = max(nW, min(drawnW, W))
+460 | 
+Sources/Keyboop/GigaAMEngine.swift:85:27: warning: capture of 'self' with non-Sendable type 'GigaAMEngine?' in a '@Sendable' closure [#SendableClosureCaptures]
+ 18 | /// с запасом по краям (иначе VAD отъедает первый слог: «Ничьих» → «чьих»). Без VAD-модели в
+ 19 | /// бандле запасной резак — по самому тихому месту в окне.
+ 20 | final class GigaAMEngine {
+    |             `- note: class 'GigaAMEngine' does not conform to the 'Sendable' protocol
+ 21 |     static let shared = GigaAMEngine()
+ 22 | 
+    :
+ 83 |             guard start else { return }
+ 84 |             queue.async { [weak self] in
+ 85 |                 guard let self else { return }
+    |                           `- warning: capture of 'self' with non-Sendable type 'GigaAMEngine?' in a '@Sendable' closure [#SendableClosureCaptures]
+ 86 |                 let ok = self.loadNow()
+ 87 |                 self.gate.lock()
+
+Sources/Keyboop/GigaAMEngine.swift:96:14: warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+ 94 | 
+ 95 |     func waitForPendingLoad() async {
+ 96 |         gate.lock(); let busy = loading; gate.unlock()
+    |              `- warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+ 97 |         if busy { _ = await loadIfNeeded() }
+ 98 |     }
+
+Foundation.NSLock.lock:2:11: note: 'lock()' declared here
+1 | class NSLock {
+2 | open func lock()}
+  |           `- note: 'lock()' declared here
+3 | 
+
+Sources/Keyboop/GigaAMEngine.swift:96:47: warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+ 94 | 
+ 95 |     func waitForPendingLoad() async {
+ 96 |         gate.lock(); let busy = loading; gate.unlock()
+    |                                               `- warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+ 97 |         if busy { _ = await loadIfNeeded() }
+ 98 |     }
+
+Foundation.NSLock.unlock:2:11: note: 'unlock()' declared here
+1 | class NSLock {
+2 | open func unlock()}
+  |           `- note: 'unlock()' declared here
+3 | 
+
+Sources/Keyboop/GigaAMEngine.swift:112:66: error: cannot convert value of type '(UnsafeMutableRawPointer?) -> Void' to expected argument type '(UnsafeMutablePointer<CChar>?) throws -> Void' (aka '(Optional<UnsafeMutablePointer<Int8>>) throws -> ()')
+110 |         let tok = strdup(f.tokens.path), cpu = strdup("cpu"), mtype = strdup("nemo_transducer")
+111 |         let method = strdup("greedy_search")
+112 |         defer { [enc, dec, joi, tok, cpu, mtype, method].forEach { free($0) } }
+    |                                                                  |- error: cannot convert value of type '(UnsafeMutableRawPointer?) -> Void' to expected argument type '(UnsafeMutablePointer<CChar>?) throws -> Void' (aka '(Optional<UnsafeMutablePointer<Int8>>) throws -> ()')
+    |                                                                  `- note: arguments to generic parameter 'Wrapped' ('UnsafeMutablePointer<CChar>' (aka 'UnsafeMutablePointer<Int8>') and 'UnsafeMutableRawPointer') are expected to be equal
+113 |         cfg.model_config.transducer.encoder = UnsafePointer(enc)
+114 |         cfg.model_config.transducer.decoder = UnsafePointer(dec)
+
+Sources/Keyboop/GigaAMEngine.swift:158:27: warning: capture of 'self' with non-Sendable type 'GigaAMEngine?' in a '@Sendable' closure [#SendableClosureCaptures]
+ 18 | /// с запасом по краям (иначе VAD отъедает первый слог: «Ничьих» → «чьих»). Без VAD-модели в
+ 19 | /// бандле запасной резак — по самому тихому месту в окне.
+ 20 | final class GigaAMEngine {
+    |             `- note: class 'GigaAMEngine' does not conform to the 'Sendable' protocol
+ 21 |     static let shared = GigaAMEngine()
+ 22 | 
+    :
+156 |         await withCheckedContinuation { (c: CheckedContinuation<String?, Never>) in
+157 |             queue.async { [weak self] in
+158 |                 guard let self else { return c.resume(returning: nil) }
+    |                           `- warning: capture of 'self' with non-Sendable type 'GigaAMEngine?' in a '@Sendable' closure [#SendableClosureCaptures]
+159 |                 c.resume(returning: self.transcribeNow(samples))
+160 |             }
+
+[#SendableClosureCaptures]: <https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures>
