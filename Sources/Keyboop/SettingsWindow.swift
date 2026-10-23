@@ -3695,7 +3695,7 @@ final class DetailVC: NSViewController {
 
     private var unifiedCatalog: [UnifiedModel] = []
     /// Что показываем сразу: Neural-Engine-модель и самая сильная whisper. Остальные — под спойлером.
-    private static let recommendedModelIds: Set<String> = ["parakeet", "large-v3-turbo"]
+    private static let recommendedModelIds: Set<String> = ["gigaam", "parakeet", "large-v3-turbo"]
     /// nil — ещё не решали (решим по факту: активна/скачана ли «спрятанная» модель).
     private var voiceOthersExpanded: Bool?
     private var downloadingModelId: String?      // какая модель качается сейчас (одна за раз)
@@ -3708,7 +3708,7 @@ final class DetailVC: NSViewController {
 
     /// Одна запись каталога моделей. Движок выводится из активной модели (тумблер Whisper/Parakeet убран).
     struct UnifiedModel {
-        let engine: String      // "parakeet" | "whisper"
+        let engine: String      // "gigaam" | "parakeet" | "whisper"
         let id: String          // "parakeet" или имя whisper-модели (base/small/…)
         let display: String
         let size: String
@@ -3727,13 +3727,20 @@ final class DetailVC: NSViewController {
             return body.contains("%@") ? String(format: body, L10n.t("model.memNote")) : body
         }
         func isInstalled() -> Bool {
-            engine == "parakeet" ? ParakeetEngine.modelInstalled : ModelDownloader.shared.isInstalled(id)
+            engine == "gigaam" ? GigaAMEngine.modelInstalled
+                : (engine == "parakeet" ? ParakeetEngine.modelInstalled : ModelDownloader.shared.isInstalled(id))
         }
     }
 
     /// Полный каталог: Parakeet (рекомендуемый, по умолчанию) первым, затем whisper по возрастанию размера.
     private func unifiedModels() -> [UnifiedModel] {
         var list: [UnifiedModel] = []
+        #if KEYBOOP_GIGAAM
+        // GigaAM v3 — первым: русская модель с пунктуацией, ради неё эта сборка и сделана.
+        list.append(UnifiedModel(engine: "gigaam", id: "gigaam",
+                                 display: L10n.t("voice.gigaName"), size: L10n.size("~230 MB"),
+                                 note: L10n.t("voice.gigaDesc"), helpKey: "voice.gigaHelp"))
+        #endif
         #if arch(arm64) && !KEYBOOP_NO_PARAKEET   // Intel: Parakeet физически отсутствует в сборке (нет Neural Engine) — не дразним
         list.append(UnifiedModel(engine: "parakeet", id: "parakeet",
                                  display: L10n.t("voice.pkName"), size: L10n.size("~465 MB"),
@@ -3850,14 +3857,17 @@ final class DetailVC: NSViewController {
 
     /// Активна ли модель (движок + конкретная whisper-модель).
     private func isActiveModel(_ m: UnifiedModel) -> Bool {
-        m.engine == "parakeet"
+        if m.engine == "gigaam" { return settings.voiceEngine == "gigaam" }
+        return m.engine == "parakeet"
             ? settings.voiceEngine == "parakeet"
             : (settings.voiceEngine == "whisper" && settings.voiceModel == m.id)
     }
 
     /// Сделать модель активной: движок выводится из неё (whisper-модель ещё и запоминается).
     private func activateModel(_ m: UnifiedModel) {
-        if m.engine == "parakeet" {
+        if m.engine == "gigaam" {
+            settings.voiceEngine = "gigaam"
+        } else if m.engine == "parakeet" {
             settings.voiceEngine = "parakeet"
         } else {
             settings.voiceEngine = "whisper"
@@ -3925,6 +3935,15 @@ final class DetailVC: NSViewController {
             right.append(del)
         }
 
+        // GigaAM: своя модель из папки (формат sherpa-onnx). Доступна всегда — ей же заменяют
+        // стоковую на дообученную.
+        if m.engine == "gigaam" && downloadingModelId != m.id {
+            let imp = NSButton(title: L10n.t("voice.gigaImport"), target: self, action: #selector(importGigaAction(_:)))
+            imp.bezelStyle = .rounded; imp.controlSize = .regular; imp.tag = index
+            imp.toolTip = L10n.t("voice.gigaImportTip")
+            imp.setContentCompressionResistancePriority(.required, for: .horizontal)
+            right.insert(imp, at: 0)
+        }
         let spacer = NSView(); spacer.setContentHuggingPriority(NSLayoutConstraint.Priority(1), for: .horizontal)
         spacer.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(1), for: .horizontal)
         // «i» перед кнопками действия: человек должен узнать цену ДО того, как нажмёт «Скачать»,
@@ -4970,6 +4989,13 @@ final class DetailVC: NSViewController {
         }
         if m.engine == "whisper" {
             ModelDownloader.shared.download(m.id, progress: onProgress, done: onDone)
+        } else if m.engine == "gigaam" {
+            Task {
+                let ok = await GigaAMEngine.shared.download(progress: { p in
+                    DispatchQueue.main.async { onProgress(p) }
+                })
+                await MainActor.run { onDone(ok) }
+            }
         } else {
             Task {
                 let ok = await ParakeetEngine.shared.download(progress: { p in
@@ -5010,7 +5036,38 @@ final class DetailVC: NSViewController {
             }
         }
         if m.engine == "whisper" { ModelDownloader.shared.delete(m.id, completion: finish) }
+        else if m.engine == "gigaam" { GigaAMEngine.shared.deleteModel(completion: finish) }
         else { ParakeetEngine.shared.deleteModel(completion: finish) }
+    }
+
+    /// «Из папки…» у GigaAM: выбрать папку с моделью в формате sherpa-onnx и скопировать к себе.
+    @objc private func importGigaAction(_ s: NSButton) {
+        guard s.tag < unifiedCatalog.count, downloadingModelId == nil else { return }
+        let m = unifiedCatalog[s.tag]
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = L10n.t("voice.gigaImportPick")
+        panel.message = L10n.t("voice.gigaImportMsg")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        downloadingModelId = m.id
+        voiceModelStatus[m.id]?.stringValue = L10n.t("voice.gigaImporting")
+        s.isEnabled = false
+        GigaAMEngine.shared.importModel(from: url) { [weak self] ok, err in
+            guard let self else { return }
+            self.downloadingModelId = nil
+            if ok {
+                self.activateModel(m)          // reshow внутри; preload загрузит модель — сразу видно, жива ли
+            } else {
+                let a = NSAlert()
+                a.messageText = L10n.t("voice.gigaImportFail")
+                a.informativeText = err ?? ""
+                a.alertStyle = .warning
+                a.runModal()
+                self.reshow()
+            }
+        }
     }
 }
 

@@ -1,0 +1,115 @@
+# Сборка Keyboop с движком GigaAM v3 (sherpa-onnx) для Apple Silicon.
+# Результат: Keyboop-GigaAM.zip — в артефактах запуска и в релизе «gigaam-latest» этого форка.
+# Сборка dev-режима build-app.sh: свой bundle id (ru.keyboop.app.dev), без автообновлений Sparkle,
+# ad-hoc подпись. Parakeet выключен (FluidAudio не собирается в CI), Whisper и GigaAM — на месте.
+name: build-gigaam
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  WHISPER_TAG: v1.9.5
+  SPARKLE_VERSION: 2.10.0
+  SHERPA_VERSION: 1.13.8
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swiftc --version
+          sw_vers
+
+      - name: Cache vendor
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: vendor-${{ env.WHISPER_TAG }}-${{ env.SPARKLE_VERSION }}-${{ env.SHERPA_VERSION }}-v1
+
+      - name: whisper.cpp (static, deployment target 14.0)
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p vendor && cd vendor
+          git clone --depth 1 --branch "$WHISPER_TAG" https://github.com/ggml-org/whisper.cpp
+          cd whisper.cpp
+          cmake -B build-macos14 -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_EXAMPLES=OFF \
+            -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=OFF
+          cmake --build build-macos14 -j
+          find build-macos14 -name "*.a"
+
+      - name: Sparkle.framework
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p vendor/sparkle && cd vendor/sparkle
+          curl -fsSL -o sparkle.tar.xz "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz"
+          tar xf sparkle.tar.xz && rm sparkle.tar.xz
+          ls Sparkle.framework/Versions/B
+
+      - name: sherpa-onnx (static) + Silero VAD
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p vendor && cd vendor
+          n="sherpa-onnx-v${SHERPA_VERSION}-osx-arm64-static-no-tts"
+          curl -fsSL -O "https://github.com/k2-fsa/sherpa-onnx/releases/download/v${SHERPA_VERSION}/${n}.tar.bz2"
+          tar xjf "${n}.tar.bz2" && rm "${n}.tar.bz2"
+          mkdir -p sherpa-onnx
+          mv "${n}/include" "${n}/lib" sherpa-onnx/
+          rm -rf "${n}"
+          curl -fsSL -o sherpa-onnx/silero_vad.onnx https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx
+          echo "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6  sherpa-onnx/silero_vad.onnx" | shasum -a 256 -c
+          ls -la sherpa-onnx/lib
+
+      - name: Build Keyboop.app
+        env:
+          KEYBOOP_SIGN_ID: "-"   # ad-hoc: сертификата «Keyboop Dev» на сборщике нет
+        run: |
+          bash build-app.sh
+          ls -la Keyboop.app/Contents/MacOS Keyboop.app/Contents/Resources
+          otool -L Keyboop.app/Contents/MacOS/Keyboop
+          nm -gU Keyboop.app/Contents/MacOS/Keyboop >/dev/null
+          # Убедиться, что GigaAM действительно вкомпилирован
+          test "$(strings Keyboop.app/Contents/MacOS/Keyboop | grep -c nemo_transducer)" -gt 0 && echo "GigaAM: OK"
+
+      - name: Smoke test — модель грузится и распознаёт (CLI sherpa-onnx той же версии)
+        run: |
+          curl -fsSL -O https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16.tar.bz2
+          echo "f9620a0099019c6afcee26525ef9ed3297fa50dd5691c1902af0c948fc1a470b  sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16.tar.bz2" | shasum -a 256 -c
+          tar xjf sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16.tar.bz2
+          n="sherpa-onnx-v${SHERPA_VERSION}-osx-arm64-static-no-tts"
+          curl -fsSL -O "https://github.com/k2-fsa/sherpa-onnx/releases/download/v${SHERPA_VERSION}/${n}.tar.bz2"
+          tar xjf "${n}.tar.bz2" "${n}/bin/sherpa-onnx-offline"
+          d=sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16
+          "${n}/bin/sherpa-onnx-offline" --encoder=$d/encoder.int8.onnx --decoder=$d/decoder.onnx \
+            --joiner=$d/joiner.onnx --tokens=$d/tokens.txt --model-type=nemo_transducer \
+            $d/test_wavs/example.wav
+
+      - name: Package
+        run: |
+          ditto -c -k --keepParent Keyboop.app Keyboop-GigaAM.zip
+          ls -la Keyboop-GigaAM.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Keyboop-GigaAM
+          path: Keyboop-GigaAM.zip
+
+      - name: Release gigaam-latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete gigaam-latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create gigaam-latest Keyboop-GigaAM.zip \
+            --title "Keyboop + GigaAM v3 ($(date '+%Y-%m-%d %H:%M'))" \
+            --notes "Сборка из ${GITHUB_SHA::7}. Установка: распаковать, перетащить Keyboop.app в «Программы», затем в Терминале: xattr -dr com.apple.quarantine \"/Applications/Keyboop.app\""

@@ -219,7 +219,10 @@ final class AppSettings {
     var voiceHotkeyModifiers: UInt64 { get { let v = d.object(forKey: "voiceHotkeyMods") as? Int; return UInt64(bitPattern: Int64(v ?? Int(CGEventFlags.maskAlternate.rawValue))) } set { d.set(Int(bitPattern: UInt(newValue)), forKey: "voiceHotkeyMods") } }
     var voiceHotkeyKeyLabel: String { get { d.string(forKey: "voiceHotkeyKeyLabel") ?? "правый ⌥" } set { d.set(newValue, forKey: "voiceHotkeyKeyLabel") } }
     /// Движок распознавания: "parakeet" (ANE, точнее на RU — по умолчанию) или "whisper".
-    #if arch(arm64) && !KEYBOOP_NO_PARAKEET
+    /// "gigaam" — GigaAM v3 через sherpa-onnx (сборка с vendor/sherpa-onnx): русский, по умолчанию.
+    #if KEYBOOP_GIGAAM
+    private static let defaultVoiceEngine = "gigaam"
+    #elseif arch(arm64) && !KEYBOOP_NO_PARAKEET
     private static let defaultVoiceEngine = "parakeet"
     #else
     private static let defaultVoiceEngine = "whisper"   // Intel: Parakeet отсутствует в сборке (нет ANE)

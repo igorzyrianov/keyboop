@@ -99,7 +99,12 @@ final class WelcomeWindowController: NSWindowController, NSWindowDelegate {
         // Голос: предложить скачать модель прямо в онбординге.
         addSection(stack, L10n.t("wel.voiceTitle"))
         addWrap(stack, L10n.t("wel.voiceBody"), size: 12.5, color: .secondaryLabelColor)
-        if ParakeetEngine.modelInstalled {
+        #if KEYBOOP_GIGAAM
+        let voiceReady = GigaAMEngine.modelInstalled      // сборка с GigaAM: онбординг качает его
+        #else
+        let voiceReady = ParakeetEngine.modelInstalled
+        #endif
+        if voiceReady {
             let ok = NSTextField(labelWithString: L10n.t("wel.voiceReady"))
             ok.font = .systemFont(ofSize: 12, weight: .semibold); ok.textColor = DS.coral
             stack.addArrangedSubview(ok)
@@ -373,9 +378,16 @@ final class WelcomeWindowController: NSWindowController, NSWindowDelegate {
         voiceDownloading = true
         voiceBtn?.isEnabled = false; voiceBtn?.title = "0%"
         Task { [weak self] in
+            #if KEYBOOP_GIGAAM
+            let ok = await GigaAMEngine.shared.download(progress: { f in
+                DispatchQueue.main.async { self?.voiceBtn?.title = "\(Int(f * 100))%" }
+            })
+            if ok { await MainActor.run { AppSettings.shared.voiceEngine = "gigaam"; VoiceController.shared.preload() } }
+            #else
             let ok = await ParakeetEngine.shared.download(progress: { f in
                 DispatchQueue.main.async { self?.voiceBtn?.title = "\(Int(f * 100))%" }
             })
+            #endif
             await MainActor.run {
                 self?.voiceDownloading = false
                 self?.voiceBtn?.isEnabled = true

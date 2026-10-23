@@ -160,7 +160,9 @@ final class VoiceController {
         // и компилируется под ANE лениво, при первой транскрипции — замер 21.07 на чистом контейнере:
         // запись кончилась в 15:16:14, текст пришёл в 15:16:57 (+43с!). Пользователь видит «первая
         // диктовка думает полминуты», дальше всё быстро. Теперь греем в фоне со старта.
-        if willUseParakeet {
+        if willUseGiga {
+            Task { _ = await GigaAMEngine.shared.loadIfNeeded() }
+        } else if willUseParakeet {
             Task { _ = await ParakeetEngine.shared.loadIfNeeded() }
         } else {
             transcribeQueue.async { [weak self] in
@@ -190,6 +192,10 @@ final class VoiceController {
     private var willUseParakeet: Bool {
         settings.voiceEngine == "parakeet" && ParakeetEngine.modelInstalled
     }
+    /// GigaAM v3 (sherpa-onnx, CPU): выбран и папка модели на месте.
+    private var willUseGiga: Bool {
+        settings.voiceEngine == "gigaam" && GigaAMEngine.modelInstalled
+    }
 
     // MARK: - Модель
 
@@ -206,6 +212,7 @@ final class VoiceController {
     /// Есть ли пригодная модель: Parakeet (если выбран и скачан) ИЛИ whisper-файл (fallback).
     var hasUsableModel: Bool {
         if settings.voiceEngine == "parakeet" && ParakeetEngine.modelInstalled { return true }
+        if willUseGiga { return true }
         return modelInstalled
     }
     /// Зовётся, когда диктовку нажали, а модели нет — UI предложит скачать.
@@ -247,7 +254,10 @@ final class VoiceController {
             // загрузку ЦЕЛИКОМ (large-v3-turbo ~1.2с) и только потом включал микрофон. Записи модель
             // не нужна, а транскрипция встаёт на transcribeQueue ПОЗАДИ загрузки — порядок гарантирует
             // сама очередь. Параллельно: старт мгновенный, загрузка прячется под время речи.
-            if !willUseParakeet {
+            if willUseGiga {
+                // Холодный GigaAM начинает грузиться на нажатии, загрузка прячется под время речи.
+                if !GigaAMEngine.shared.ready { Task { _ = await GigaAMEngine.shared.loadIfNeeded() } }
+            } else if !willUseParakeet {
                 transcribeQueue.async { [weak self] in self?.loadModelIfNeeded() }
             } else if !ParakeetEngine.shared.ready {
                 // Тот же приём для Parakeet (24.09.2026): холодная модель начинает грузиться на
@@ -345,7 +355,8 @@ final class VoiceController {
             return
         }
         let lang = languageForWhisper()
-        let useParakeet = settings.voiceEngine == "parakeet" && ParakeetEngine.modelInstalled
+        let useGiga = willUseGiga
+        let useParakeet = !useGiga && settings.voiceEngine == "parakeet" && ParakeetEngine.modelInstalled
         // Холодный whisper (модели нет в памяти): загрузка крупной модели с незакэшированного
         // диска — секунды-десятки секунд, и она не должна съедать бюджет сторожа транскрипции.
         // ⚠️ ХОЛОДНАЯ ЗАГРУЗКА СЧИТАЕТСЯ ДЛЯ ОБОИХ ДВИЖКОВ (фикс 30.07). Раньше здесь стояло
@@ -355,14 +366,50 @@ final class VoiceController {
         // давал 15 секунд, и первая диктовка после холодного паракита была не «медленной», а
         // ГАРАНТИРОВАННО потерянной: текст распознавался и приходил, но его отбрасывали как поздний.
         // Воспроизводится не на старте (там греет preload), а при смене движка в настройках на ходу.
-        let cold = useParakeet ? !ParakeetEngine.shared.ready : (whisper == nil)
+        let cold = useGiga ? !GigaAMEngine.shared.ready
+                 : (useParakeet ? !ParakeetEngine.shared.ready : (whisper == nil))
         let gen = beginTranscription(duration: recorder.duration, coldLoad: cold)
         refreshIndicator()   // НЕ setState(.processing) напрямую: отменённую диктовку считаем молча
 
         // Диагностика «почему медленно»: сразу видно, на каком движке распознаём и почему НЕ Parakeet
         // (whisper на CPU/Metal растёт с длиной аудио; Parakeet на ANE — почти мгновенный). Если тут
         // whisper при voiceEngine=parakeet — значит модель Parakeet не скачана (parakeetInstalled=false).
-        kbLog("voice: движок=\(useParakeet ? "parakeet/ANE" : "whisper/CPU") · выбран=\(settings.voiceEngine) parakeetInstalled=\(ParakeetEngine.modelInstalled) whisperModel=\(settings.voiceModel)")
+        kbLog("voice: движок=\(useGiga ? "gigaam/CPU" : (useParakeet ? "parakeet/ANE" : "whisper/CPU")) · выбран=\(settings.voiceEngine) parakeetInstalled=\(ParakeetEngine.modelInstalled) whisperModel=\(settings.voiceModel)")
+        if useGiga {
+            Task { [weak self] in
+                guard let self else { return }
+                let ok = await GigaAMEngine.shared.loadIfNeeded()
+                let out = ok ? await GigaAMEngine.shared.transcribe(samples: samples, language: lang) : nil
+                var text = out ?? ""
+                kbLog("voice: gigaam(готов=\(ok)) → \(out.map { "\($0.count) симв." } ?? "ОТКАЗ")")
+                // Отказ движка (не загрузилась модель) → доканчиваем Whisper'ом, если он скачан,
+                // и один раз за запуск говорим об этом человеку — как с Parakeet.
+                if out == nil {
+                    if await MainActor.run(body: { self.modelInstalled }) {
+                        text = await withCheckedContinuation { (c: CheckedContinuation<String, Never>) in
+                            self.transcribeQueue.async { [weak self] in
+                                guard let self else { return c.resume(returning: "") }
+                                self.loadModelIfNeeded()
+                                c.resume(returning: self.whisper?.transcribe(samples: samples, language: lang) ?? "")
+                            }
+                        }
+                    }
+                    if !Self.gigaFallbackTold {
+                        Self.gigaFallbackTold = true
+                        let key = text.isEmpty ? "voice.gigaNoAlt" : "voice.gigaFell"
+                        await MainActor.run { VoiceIndicator.shared.showToast(L10n.t(key)) }
+                    }
+                }
+                let clip = VoiceClips.save(samples: samples)
+                await MainActor.run {
+                    guard self.endTranscription(gen) else { clip.map { VoiceClips.delete($0.id) }; return }
+                    self.deliver(text, historyOnly: self.historyOnlyGens.remove(gen) != nil, audio: clip?.id, wave: clip?.wave)
+                    self.refreshIndicator()
+                    self.scheduleModelRelease()
+                }
+            }
+            return
+        }
         if useParakeet {
             Task { [weak self] in
                 guard let self else { return }
@@ -896,6 +943,7 @@ final class VoiceController {
     /// Отложенная выгрузка модели Whisper из памяти (см. scheduleModelRelease).
     /// Сказали ли мы уже про отказ Parakeet. Статический: живёт до конца запуска, см. место вызова.
     private static var parakeetFallbackTold = false
+    private static var gigaFallbackTold = false
 
     private var modelIdleRelease: DispatchWorkItem?
 
@@ -964,6 +1012,16 @@ final class VoiceController {
             self.whisper = nil                   // deinit → whisper_free
             kbLog("voice: модель Whisper выгружена после диктовки (настройка)")
         }
+        if !GigaAMEngine.shared.unload() {
+            Task { [weak self] in
+                await GigaAMEngine.shared.waitForPendingLoad()
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                await MainActor.run {
+                    guard let self, self.settings.voiceUnloadAfterDictation else { return }
+                    self.releaseModelsNow()
+                }
+            }
+        }
         if !ParakeetEngine.shared.unload() {
             Task { [weak self] in
                 await ParakeetEngine.shared.waitForPendingLoad()
@@ -995,7 +1053,11 @@ final class VoiceController {
             self.lastVoiceUseAt = Date()
             self.modelIdleRelease?.cancel(); self.modelIdleRelease = nil
         }
-        if useParakeet {
+        if settings.voiceEngine == "gigaam" && GigaAMEngine.modelInstalled {
+            if await GigaAMEngine.shared.loadIfNeeded(),
+               let t = await GigaAMEngine.shared.transcribe(samples: samples, language: lang) { return t }
+            kbLog("импорт: gigaam отказал — пробую whisper")
+        } else if useParakeet {
             if await ParakeetEngine.shared.loadIfNeeded(),
                let t = await ParakeetEngine.shared.transcribe(samples: samples, language: lang) { return t }
             kbLog("импорт: parakeet отказал — пробую whisper")

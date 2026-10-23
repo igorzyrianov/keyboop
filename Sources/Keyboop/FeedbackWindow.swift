@@ -427,7 +427,7 @@ final class FeedbackWindowController: NSWindowController, NSWindowDelegate, NSTe
         secure input держатель (ИМЯ НЕНАДЁЖНО, поле застревает на первом за сессию): \(AppHealth.secureInputHolder ?? "—")
         запущено из: \(Permissions.launchLocationForDiagnostics())
         раскладки: \(layouts.isEmpty ? "—" : layouts)
-        движок: \(s.voiceEngine) · parakeet установлен=\(ParakeetEngine.modelInstalled) · whisper-модель=\(s.voiceModel) · выгрузка после диктовки=\(s.voiceUnloadAfterDictation)
+        движок: \(s.voiceEngine) · parakeet установлен=\(ParakeetEngine.modelInstalled) · gigaam установлен=\(GigaAMEngine.modelInstalled) · whisper-модель=\(s.voiceModel) · выгрузка после диктовки=\(s.voiceUnloadAfterDictation)
         микрофон: \(micName)
         авто-переключение=\(s.autoEnabled) · live-fix=\(s.liveFixEnabled) · триггеры: space=\(s.triggerSpace) enter=\(s.triggerEnter) tab=\(s.triggerTab)
         \(hk)

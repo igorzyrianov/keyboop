@@ -194,15 +194,36 @@ FA="vendor/fluidaudio-prebuilt"
 # Sparkle (автообновления): динамический фреймворк. Линкуем + rpath на Contents/Frameworks,
 # куда сам фреймворк копируется ниже (с переподписью вложенных бинарей нашим Developer ID).
 SPARKLE="vendor/sparkle"
-swiftc -O Sources/Keyboop/*.swift \
+# sherpa-onnx (движок GigaAM v3) — предсобранная статика с релизов k2-fsa/sherpa-onnx
+# (sherpa-onnx-vX-osx-arm64-static-no-tts → vendor/sherpa-onnx/{include,lib}). Необязателен:
+# нет папки — собираемся как апстрим, GigaAM в настройках просто не появится.
+SHERPA="vendor/sherpa-onnx"
+SHERPA_FLAGS=()
+if [ -f "$SHERPA/lib/libsherpa-onnx-c-api.a" ]; then
+  SHERPA_FLAGS=(-D KEYBOOP_GIGAAM -I "$SHERPA/include" -L "$SHERPA/lib"
+    -lsherpa-onnx-c-api -lsherpa-onnx-core -lkaldi-decoder-core -lsherpa-onnx-kaldifst-core
+    -lsherpa-onnx-fstfar -lsherpa-onnx-fst -lkaldi-native-fbank-core -lkissfft-float
+    -lssentencepiece_core -lonnxruntime -framework Foundation)
+  echo "  sherpa-onnx: найден — GigaAM включён"
+else
+  echo "  (нет vendor/sherpa-onnx — сборка без GigaAM)"
+fi
+# FluidAudio тоже необязателен (форк igorzyrianov): нет статики — Parakeet выключается флагом
+# KEYBOOP_NO_PARAKEET, который код уже понимает (тот же путь, что у Intel-среза).
+FA_FLAGS=()
+if [ -f "$FA/libFluidAudio.a" ]; then
+  FA_FLAGS=(-I "$FA/Modules" -I "$FA/include/FastClusterWrapper" -I "$FA/include/MachTaskSelfWrapper" -L "$FA" -lFluidAudio)
+else
+  FA_FLAGS=(-D KEYBOOP_NO_PARAKEET)
+  echo "  (нет vendor/fluidaudio-prebuilt — сборка без Parakeet)"
+fi
+swiftc -O Sources/Keyboop/*.swift "${SHERPA_FLAGS[@]}" "${FA_FLAGS[@]}" \
   -o "$APP/Contents/MacOS/Keyboop" \
   -swift-version 5 -target arm64-apple-macos14.0 \
   -import-objc-header Sources/Keyboop/whisper-bridging.h \
   -I "$WHISPER/include" -I "$WHISPER/ggml/include" \
-  -I "$FA/Modules" -I "$FA/include/FastClusterWrapper" -I "$FA/include/MachTaskSelfWrapper" \
   -L "$WHISPER_BUILD/src" -L "$WHISPER_BUILD/ggml/src" \
   -L "$WHISPER_BUILD/ggml/src/ggml-metal" -L "$WHISPER_BUILD/ggml/src/ggml-blas" \
-  -L "$FA" -lFluidAudio \
   -lwhisper -lggml -lggml-cpu -lggml-metal -lggml-blas -lggml-base -lc++ \
   -framework AppKit -framework Carbon -framework ServiceManagement -framework ApplicationServices -framework IOKit \
   -framework AVFoundation -framework CoreAudio -framework AudioToolbox -framework Metal -framework MetalKit -framework Accelerate -framework CoreML \
@@ -245,6 +266,8 @@ fi
 
 # Языковые данные (триграммы/словари) в bundle Resources
 cp Sources/Keyboop/Resources/*.json "$APP/Contents/Resources/" 2>/dev/null || echo "  (нет Resources/*.json — детектор будет без данных)"
+# Silero VAD для нарезки длинных диктовок GigaAM (650 КБ). Без него — запасная нарезка по тишине.
+cp "$SHERPA/silero_vad.onnx" "$APP/Contents/Resources/" 2>/dev/null && echo "  ресурс: silero_vad.onnx (GigaAM)" || true
 # Знак Keyboop (template) для waveform в строке меню
 cp Sources/Keyboop/Resources/menubar-mark.png "$APP/Contents/Resources/" 2>/dev/null || echo "  (нет menubar-mark.png — значок будет вектором-фолбэком)"
 

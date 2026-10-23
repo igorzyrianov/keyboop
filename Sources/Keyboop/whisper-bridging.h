@@ -5,4 +5,10 @@
 
 #include "whisper.h"
 
+// sherpa-onnx (движок GigaAM). Подключается, только если vendor/sherpa-onnx на месте:
+// build-app.sh тогда же определяет KEYBOOP_GIGAAM для Swift. Без него сборка как у апстрима.
+#if __has_include("sherpa-onnx/c-api/c-api.h")
+#include "sherpa-onnx/c-api/c-api.h"
+#endif
+
 #endif
