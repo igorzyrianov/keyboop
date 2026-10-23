@@ -109,7 +109,7 @@ final class GigaAMEngine {
         let enc = strdup(f.encoder.path), dec = strdup(f.decoder.path), joi = strdup(f.joiner.path)
         let tok = strdup(f.tokens.path), cpu = strdup("cpu"), mtype = strdup("nemo_transducer")
         let method = strdup("greedy_search")
-        defer { [enc, dec, joi, tok, cpu, mtype, method].forEach { free($0) } }
+        defer { for p in [enc, dec, joi, tok, cpu, mtype, method] { free(UnsafeMutableRawPointer(p)) } }
         cfg.model_config.transducer.encoder = UnsafePointer(enc)
         cfg.model_config.transducer.decoder = UnsafePointer(dec)
         cfg.model_config.transducer.joiner = UnsafePointer(joi)
